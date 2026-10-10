@@ -3,7 +3,18 @@ MODDIR=${0%/*}
 SELF_MOUNT=false
 [ -f "$MODDIR/skip_mount" ] && SELF_MOUNT=true
 
+NOMOUNT_BIN="/data/adb/modules/nomount/bin/nm"
+HAVE_NM=false
+if [ -d "/data/adb/modules/nomount" ] && [ -x "$NOMOUNT_BIN" ] && \
+   "$NOMOUNT_BIN" version >/dev/null 2>&1; then
+  HAVE_NM=true
+fi
+
 ns_mount() {
+  if [ "$HAVE_NM" = true ] && "$NOMOUNT_BIN" rule add "$2" "$1" >/dev/null 2>&1; then
+    return 0
+  fi
+
   if nsenter -t 1 -m -- mount -o bind "$1" "$2" 2>/dev/null; then
     return 0
   fi
@@ -18,6 +29,13 @@ mount_effect_lib() {
   [ -d "$target_dir" ] || return 0
   [ -f "$source_dir/libv4a_re.so" ] || return 0
   [ -f "$target_dir/libv4a_re.so" ] && return 0
+
+  if [ "$HAVE_NM" = true ]; then
+    chcon --reference="$target_dir" "$source_dir/libv4a_re.so" 2>/dev/null
+    if ns_mount "$source_dir/libv4a_re.so" "$target_dir/libv4a_re.so"; then
+      return 0
+    fi
+  fi
 
   [ -d "$work_dir" ] && rm -rf "$work_dir"
   mkdir -p "$work_dir"
